@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache Drogon installation
+        id: cache-drogon
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/libdrogon*
+            /usr/local/lib/libtrantor*
+            /usr/local/include/drogon
+            /usr/local/include/trantor
+            /usr/local/lib/cmake/Drogon
+            /usr/local/lib/cmake/Trantor
+          key: drogon-v1.9.8-${{ runner.os }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git gcc g++ cmake \
+            libjsoncpp-dev uuid-dev \
+            zlib1g-dev libssl-dev
+
+      - name: Build and install Drogon
+        if: steps.cache-drogon.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch v1.9.8 --depth 1 https://github.com/drogonframework/drogon.git /tmp/drogon
+          cd /tmp/drogon
+          git submodule update --init
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF
+          make -j$(nproc)
+          sudo make install
+
+      - name: Configure project
+        run: |
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build project
+        run: |
+          cd build
+          cmake --build . -j$(nproc)
+
+      - name: Run tests
+        run: |
+          cd build/test
+          ./AsyncJobScheduler_test
